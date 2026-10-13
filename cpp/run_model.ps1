@@ -80,12 +80,20 @@ foreach ($lv in $levels) {
             continue
         }
         if ($buildCode -ne 0) { $code = $buildCode; break } # genuine compile error
-        # Run the exe with an external watchdog: model code may hard-spin inside
-        # TryEnqueue/TryDequeue, which in-test guards cannot catch.
+        # Run the exe under a watchdog cmd wrapper. The wrapper echoes the exit
+        # code to a FILE: reading Process.ExitCode is unreliable in this host
+        # (observed $null on PS 5.1), while WaitForExit()'s bool is solid.
+        # Model code may also hard-spin inside TryEnqueue/TryDequeue, which only
+        # an external kill can stop (code 124).
+        $tmpCode = "$logPath.exitcode"
         $tmpOut = "$logPath.stdout"; $tmpErr = "$logPath.stderr"
-        Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+        Remove-Item $tmpCode, $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+        # (Leading `call` defeats cmd's /c quote-stripping when the command
+        # starts with a quote character.)
+        $inner = "call `"$exePath`" & echo !ERRORLEVEL! > `"$tmpCode`""
         try {
-            $proc = Start-Process -FilePath $exePath -NoNewWindow -PassThru `
+            $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/v:on', '/c', $inner `
+                -NoNewWindow -PassThru `
                 -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr `
                 -WorkingDirectory $binDir
         }
@@ -96,21 +104,26 @@ foreach ($lv in $levels) {
             $retryable = $true # relink and retry
             continue
         }
-        $proc | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue
-        if ($proc.HasExited) {
-            $code = $proc.ExitCode
+        $exited = $proc.WaitForExit(240000)
+        foreach ($f in @($tmpOut, $tmpErr)) {
+            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
+        }
+        if ($exited) {
+            if (Test-Path $tmpCode) {
+                $code = [int]((Get-Content -Raw $tmpCode).Trim())
+                Remove-Item $tmpCode -Force
+            }
+            else { $code = -1 }
         }
         else {
             Stop-Process -InputObject $proc -Force
             $code = 124
+            Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: exe killed after 240s"
         }
-        foreach ($f in @($tmpOut, $tmpErr)) {
-            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
-        }
-        if ($code -eq 124) { Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: exe killed after 240s" }
         $text = Get-Content -Raw $logPath
         if ($null -eq $text) { $text = '' }
         $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
+        if ((-not $passed) -and ($code -ne 0) -and ($text -match 'Device Guard')) { $retryable = $true }
     } while ((-not $passed) -and $retryable -and ($attempt -lt 5))
     $sw.Stop()
     $secs = [math]::Round($sw.Elapsed.TotalSeconds, 2)

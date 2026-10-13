@@ -44,23 +44,34 @@ foreach ($lv in $levels) {
     $code = $buildCode
     $passed = $false
     if (($buildCode -eq 0) -and (Test-Path $dllPath)) {
+        # Run under a watchdog cmd wrapper that echoes the exit code to a FILE:
+        # reading Process.ExitCode is unreliable in this host ($null on PS 5.1).
+        $tmpCode = "$logPath.exitcode"
         $tmpOut = "$logPath.stdout"; $tmpErr = "$logPath.stderr"
-        Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
-        $proc = Start-Process -FilePath 'dotnet' -ArgumentList "`"$dllPath`"" -NoNewWindow -PassThru `
+        Remove-Item $tmpCode, $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+        # (Leading `call` defeats cmd's /c quote-stripping when the command
+        # starts with a quote character.)
+        $inner = "call dotnet `"$dllPath`" & echo !ERRORLEVEL! > `"$tmpCode`""
+        $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/v:on', '/c', $inner `
+            -NoNewWindow -PassThru `
             -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr `
             -WorkingDirectory (Split-Path $dllPath)
-        $proc | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue
-        if ($proc.HasExited) {
-            $code = $proc.ExitCode
+        $exited = $proc.WaitForExit(240000)
+        foreach ($f in @($tmpOut, $tmpErr)) {
+            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
+        }
+        if ($exited) {
+            if (Test-Path $tmpCode) {
+                $code = [int]((Get-Content -Raw $tmpCode).Trim())
+                Remove-Item $tmpCode -Force
+            }
+            else { $code = -1 }
         }
         else {
             Stop-Process -InputObject $proc -Force
             $code = 124
+            Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: test killed after 240s"
         }
-        foreach ($f in @($tmpOut, $tmpErr)) {
-            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
-        }
-        if ($code -eq 124) { Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: test killed after 240s" }
         $text = Get-Content -Raw $logPath
         if ($null -eq $text) { $text = '' }
         $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
