@@ -1,0 +1,47 @@
+using System;
+using System.Collections.Generic;
+
+// TODO (AI): implement this class with ArrayPool<T>.Shared. Keep the public API identical.
+public sealed class PooledList<T> : IDisposable, IEnumerable<T>
+{
+    public PooledList()
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public PooledList(int capacity)
+    {
+        // TODO (negative -> ArgumentOutOfRangeException)
+        throw new NotImplementedException();
+    }
+
+    public PooledList(IEnumerable<T> items)
+    {
+        // TODO (null -> ArgumentNullException)
+        throw new NotImplementedException();
+    }
+
+    public int Count => throw new NotImplementedException();
+    public int Capacity => throw new NotImplementedException();
+
+    public T this[int index]
+    {
+        get => throw new NotImplementedException();
+        set => throw new NotImplementedException();
+    }
+
+    public void Add(T item) => throw new NotImplementedException();
+    public void AddRange(IEnumerable<T> items) => throw new NotImplementedException();
+    public void Insert(int index, T item) => throw new NotImplementedException();
+    public void RemoveAt(int index) => throw new NotImplementedException();
+    public void Clear() => throw new NotImplementedException();
+    public void EnsureCapacity(int n) => throw new NotImplementedException();
+    public void TrimExcess() => throw new NotImplementedException();
+    public Span<T> AsSpan() => throw new NotImplementedException();
+    public T[] ToArray() => throw new NotImplementedException();
+    public void Dispose() => throw new NotImplementedException();
+
+    public IEnumerator<T> GetEnumerator() => throw new NotImplementedException();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => throw new NotImplementedException();
+}

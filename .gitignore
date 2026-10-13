@@ -1,0 +1,17 @@
+# Benchmark result archives (per-model runs stay local)
+results/
+
+# .NET build outputs
+bin/
+obj/
+
+# MSVC artifacts
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.iobj
+*.ipdb
+
+# Visual Studio scratch
+.vs/

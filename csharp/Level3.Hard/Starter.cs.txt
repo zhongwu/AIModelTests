@@ -1,0 +1,30 @@
+using System;
+using System.Threading.Tasks;
+
+// TODO (AI): implement this class. Keep the public API identical.
+public sealed class SimpleThreadPool : IDisposable
+{
+    public SimpleThreadPool(int numThreads)
+    {
+        // TODO: spawn workers; numThreads<=0 -> ProcessorCount (fallback 4)
+        throw new NotImplementedException();
+    }
+
+    public Task<T> Enqueue<T>(Func<T> fn)
+    {
+        // TODO: picks up work on a worker; exceptions -> Task
+        throw new NotImplementedException();
+    }
+
+    public Task Enqueue(Action action)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public void Dispose()
+    {
+        // TODO: idempotent drain + join
+        throw new NotImplementedException();
+    }
+}

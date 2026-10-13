@@ -1,0 +1,29 @@
+using System;
+
+// TODO (AI): implement Vyukov's bounded MPMC queue. Keep the public API identical.
+// No lock/Monitor/Mutex/Semaphore/BlockingCollection/ConcurrentQueue.
+// Use only Interlocked + Volatile.
+public sealed class BoundedMpmcQueue<T>
+{
+    public BoundedMpmcQueue(int capacity)
+    {
+        // TODO: round up to pow2, alloc cells, init sequences
+        throw new NotImplementedException();
+    }
+
+    public int Capacity => throw new NotImplementedException();
+    public bool IsEmpty => throw new NotImplementedException();
+    public int Count => throw new NotImplementedException();
+
+    public bool TryEnqueue(T item)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public bool TryDequeue(out T result)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+}

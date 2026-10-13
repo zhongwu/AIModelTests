@@ -1,0 +1,24 @@
+using System;
+using System.Collections.Generic;
+
+// TODO (AI): implement these three methods. Keep the public API identical.
+public static class StringUtils
+{
+    public static string ReverseWords(string s)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public static bool IsPalindrome(string s)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public static int SumEven(IEnumerable<int> values)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+}

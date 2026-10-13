@@ -1,0 +1,45 @@
+using System;
+
+// TODO (AI): implement this class. Keep the public API identical.
+// You may add private members. O(1) average TryGet/Put expected.
+public sealed class LruCache<TKey, TValue> where TKey : notnull
+{
+    public LruCache(int capacity)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public int Capacity => throw new NotImplementedException();
+    public int Count => throw new NotImplementedException();
+
+    public bool TryGet(TKey key, out TValue value)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public void Put(TKey key, TValue value)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public bool Remove(TKey key)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public bool ContainsKey(TKey key)
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+
+    public void Clear()
+    {
+        // TODO
+        throw new NotImplementedException();
+    }
+}
