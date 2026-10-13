@@ -58,7 +58,7 @@ foreach ($lv in $levels) {
             -WorkingDirectory (Split-Path $dllPath)
         $exited = $proc.WaitForExit(240000)
         foreach ($f in @($tmpOut, $tmpErr)) {
-            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
+            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force -ErrorAction SilentlyContinue }
         }
         if ($exited) {
             if (Test-Path $tmpCode) {
@@ -68,7 +68,10 @@ foreach ($lv in $levels) {
             else { $code = -1 }
         }
         else {
-            Stop-Process -InputObject $proc -Force
+            # taskkill /T kills the whole tree: killing only the wrapper orphans
+            # the test process, which then keeps redirect files locked.
+            cmd.exe /c "taskkill /PID $($proc.Id) /T /F >nul 2>&1"
+            $proc.WaitForExit(15000) | Out-Null
             $code = 124
             Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: test killed after 240s"
         }
