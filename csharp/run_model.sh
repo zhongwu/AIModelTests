@@ -29,10 +29,11 @@ PASS_COUNT=0
 FAIL_COUNT=0
 for lv in Level1.Easy Level2.Medium Level3.Hard Level4.Harder Level5.Hardest; do
   s=$(date +%s%N)
-  if dotnet run -c Release --project "$lv/$lv.csproj" >"$RUNDIR/$lv.log" 2>&1; then
+  if timeout 300 dotnet run -c Release --project "$lv/$lv.csproj" >"$RUNDIR/$lv.log" 2>&1; then
     CODE=0
   else
     CODE=$?
+    if [ "$CODE" -eq 124 ]; then echo "[RUNNER] TIMEOUT: test killed after 300s" >>"$RUNDIR/$lv.log"; fi
   fi
   e=$(date +%s%N)
   SECS="$(awk "BEGIN {printf \"%.2f\", ($e - $s) / 1000000000}")"

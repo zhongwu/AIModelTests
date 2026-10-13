@@ -30,16 +30,43 @@ $rows = @()
 foreach ($lv in $levels) {
     $proj = Join-Path $PSScriptRoot "$lv\$lv.csproj"
     $logPath = Join-Path $runDir ($lv + '.log')
-    # Redirect INSIDE cmd so native stderr never becomes a PS error record.
-    $cmd = "dotnet run -c Release --project `"$proj`" > `"$logPath`" 2>&1"
+    $dllPath = Join-Path $PSScriptRoot "$lv\bin\Release\net8.0\$lv.dll"
+    # Build and run are separate so the run gets an external watchdog: model
+    # code may hard-spin inside TryEnqueue/TryDequeue, which in-test guards
+    # cannot catch. Redirect INSIDE cmd so stderr never becomes a PS error record.
+    # NOTE: `dotnet build` takes the project positionally (`--project` is rejected).
+    $buildCmd = "dotnet build -c Release `"$proj`" > `"$logPath`" 2>&1"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    cmd.exe /c $cmd
-    $code = $LASTEXITCODE
-    $sw.Stop()
-    $secs = [math]::Round($sw.Elapsed.TotalSeconds, 2)
+    cmd.exe /c $buildCmd
+    $buildCode = $LASTEXITCODE
     $text = Get-Content -Raw $logPath
     if ($null -eq $text) { $text = '' }
-    $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
+    $code = $buildCode
+    $passed = $false
+    if (($buildCode -eq 0) -and (Test-Path $dllPath)) {
+        $tmpOut = "$logPath.stdout"; $tmpErr = "$logPath.stderr"
+        Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+        $proc = Start-Process -FilePath 'dotnet' -ArgumentList "`"$dllPath`"" -NoNewWindow -PassThru `
+            -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr `
+            -WorkingDirectory (Split-Path $dllPath)
+        $proc | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue
+        if ($proc.HasExited) {
+            $code = $proc.ExitCode
+        }
+        else {
+            Stop-Process -InputObject $proc -Force
+            $code = 124
+        }
+        foreach ($f in @($tmpOut, $tmpErr)) {
+            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
+        }
+        if ($code -eq 124) { Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: test killed after 240s" }
+        $text = Get-Content -Raw $logPath
+        if ($null -eq $text) { $text = '' }
+        $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
+    }
+    $sw.Stop()
+    $secs = [math]::Round($sw.Elapsed.TotalSeconds, 2)
     if ($passed) { $status = 'PASS' } else { $status = 'FAIL' }
     $rows += [pscustomobject]@{ level = $lv; passed = $passed; seconds = $secs; exitCode = $code; log = ($lv + '.log') }
     Write-Host ("{0}: {1} ({2}s)" -f $lv, $status, $secs)

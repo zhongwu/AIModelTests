@@ -37,16 +37,15 @@ $runDir = Join-Path $PSScriptRoot ("results\" + $safe + "\" + $stamp)
 $suffix = 1
 while (Test-Path $runDir) { $suffix++; $runDir = Join-Path $PSScriptRoot ("results\" + $safe + "\" + $stamp + "-" + $suffix) }
 New-Item -ItemType Directory -Path $runDir | Out-Null
-
 $binDir = Join-Path $runDir 'bin'
 New-Item -ItemType Directory -Path $binDir | Out-Null
 
 # NOTE: binaries go to the run's bin/ dir (archived with the run) instead of
 # %TEMP%: org Device Guard intermittently blocks fresh %TEMP% binaries, and a
-# block verdict can stick to that file hash, so a blocked attempt RELINKS
+# block verdict can stick to a file hash, so a blocked attempt RELINKS
 # (fresh lottery ticket) rather than relaunching the same file.
 $levels = @(
-    @{ Name = 'level1_easy';    Sources = 'level1_easy\test.cpp level1_easy\solution.cpp'; Flags = '';     Exe = 'test1.exe' },
+    @{ Name = 'level1_easy';    Sources = 'level1_easy\test.cpp level1_easy\solution.cpp'; Flags = ''; Exe = 'test1.exe' },
     @{ Name = 'level2_medium';  Sources = 'level2_medium\test.cpp level2_medium\solution.cpp'; Flags = ''; Exe = 'test2.exe' },
     @{ Name = 'level3_hard';    Sources = 'level3_hard\test.cpp'; Flags = '';                              Exe = 'test3.exe' },
     @{ Name = 'level4_harder';  Sources = 'level4_harder\test.cpp'; Flags = '';                            Exe = 'test4.exe' },
@@ -58,21 +57,61 @@ $rows = @()
 foreach ($lv in $levels) {
     $logPath = Join-Path $runDir ($lv.Name + '.log')
     $exePath = Join-Path $binDir $lv.Exe
-    # Redirect INSIDE cmd (not in PowerShell) so native stderr never becomes a PS error record.
-    $buildAndRun = "call `"$vcvars`" >nul && (cl /EHsc /std:c++17 $($lv.Flags) $($lv.Sources) /Fe:$exePath /Fo:$binDir\ && `"$exePath`") > `"$logPath`" 2>&1"
+    # Build and run are separate steps. Redirect INSIDE cmd (not in PowerShell)
+    # so native stderr never becomes a PS error record.
+    $buildCmd = "call `"$vcvars`" >nul && cl /EHsc /std:c++17 $($lv.Flags) $($lv.Sources) /Fe:$exePath /Fo:$binDir\ > `"$logPath`" 2>&1"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     $attempt = 0
     $passed = $false
+    $code = -1
+    $text = ''
+    $retryable = $false
     do {
         $attempt++
+        $retryable = $false
         if ($attempt -gt 1) { Start-Sleep -Seconds 5 }
-        cmd.exe /c $buildAndRun
-        $code = $LASTEXITCODE
+        cmd.exe /c $buildCmd
+        $buildCode = $LASTEXITCODE
         $text = Get-Content -Raw $logPath
         if ($null -eq $text) { $text = '' }
-        $blocked = ($text -match 'Device Guard') -and ($code -ne 0)
+        if (($text -match 'Device Guard') -and ($buildCode -ne 0)) {
+            $code = $buildCode
+            $retryable = $true # relink: block verdicts can stick to a file hash
+            continue
+        }
+        if ($buildCode -ne 0) { $code = $buildCode; break } # genuine compile error
+        # Run the exe with an external watchdog: model code may hard-spin inside
+        # TryEnqueue/TryDequeue, which in-test guards cannot catch.
+        $tmpOut = "$logPath.stdout"; $tmpErr = "$logPath.stderr"
+        Remove-Item $tmpOut, $tmpErr -Force -ErrorAction SilentlyContinue
+        try {
+            $proc = Start-Process -FilePath $exePath -NoNewWindow -PassThru `
+                -RedirectStandardOutput $tmpOut -RedirectStandardError $tmpErr `
+                -WorkingDirectory $binDir
+        }
+        catch {
+            $text += "`n[RUNNER] process start blocked: $_"
+            Set-Content -Path $logPath -Value $text
+            $code = $buildCode
+            $retryable = $true # relink and retry
+            continue
+        }
+        $proc | Wait-Process -Timeout 240 -ErrorAction SilentlyContinue
+        if ($proc.HasExited) {
+            $code = $proc.ExitCode
+        }
+        else {
+            Stop-Process -InputObject $proc -Force
+            $code = 124
+        }
+        foreach ($f in @($tmpOut, $tmpErr)) {
+            if (Test-Path $f) { Add-Content -Path $logPath -Value (Get-Content -Raw $f); Remove-Item $f -Force }
+        }
+        if ($code -eq 124) { Add-Content -Path $logPath -Value "`n[RUNNER] TIMEOUT: exe killed after 240s" }
+        $text = Get-Content -Raw $logPath
+        if ($null -eq $text) { $text = '' }
         $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
-    } while ((-not $passed) -and $blocked -and ($attempt -lt 5))
+    } while ((-not $passed) -and $retryable -and ($attempt -lt 5))
     $sw.Stop()
     $secs = [math]::Round($sw.Elapsed.TotalSeconds, 2)
     if ($passed) { $status = 'PASS' } else { $status = 'FAIL' }

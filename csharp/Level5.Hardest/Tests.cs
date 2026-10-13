@@ -79,6 +79,7 @@ internal static class Tests
             int produced = 0, consumed = 0;
             var sw = Stopwatch.StartNew();
             var prod = new List<Thread>();
+            var prodFail = new List<string>();
             for (int p = 0; p < kProducers; p++)
             {
                 int b = p * kPerProducer;
@@ -87,7 +88,15 @@ internal static class Tests
                     for (int i = 0; i < kPerProducer; i++)
                     {
                         int v = b + i;
-                        while (!q.TryEnqueue(v)) Thread.Yield();
+                        while (!q.TryEnqueue(v))
+                        {
+                            if (sw.Elapsed > TimeSpan.FromSeconds(60))
+                            {
+                                lock (prodFail) prodFail.Add($"enqueue stuck at {v}");
+                                return;
+                            }
+                            Thread.Yield();
+                        }
                         Interlocked.Increment(ref produced);
                     }
                 });
@@ -135,6 +144,7 @@ internal static class Tests
             Check(Volatile.Read(ref produced) == kTotal, "hammer produced");
             Check(Volatile.Read(ref consumed) == kTotal, "hammer consumed");
             foreach (var f in consFail) { Console.Error.WriteLine($"FAIL: hammer {f}"); _failures++; }
+            foreach (var f in prodFail) { Console.Error.WriteLine($"FAIL: hammer {f}"); _failures++; }
             bool allSeen = true;
             for (int i = 0; i < kTotal; i++) if (Volatile.Read(ref seen[i]) != 1) { allSeen = false; break; }
             Check(allSeen, "hammer all seen");

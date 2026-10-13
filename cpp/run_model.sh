@@ -25,6 +25,7 @@ FLAGS="-std=c++17 -O2 -Wall -Wextra"
 RUN_START="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 T0=$(date +%s%N)
 mkdir -p "$RUNDIR/bin"
+mkdir -p "$RUNDIR/bin"
 
 LEVELS_JSON=""
 LEVELS_MD=""
@@ -43,10 +44,11 @@ for lv in level1_easy level2_medium level3_hard level4_harder level5_hardest; do
   s=$(date +%s%N)
   # shellcheck disable=SC2086
   if $CXX $FLAGS $LIBS -o "$RUNDIR/bin/$lv" $SRC >"$RUNDIR/$lv.log" 2>&1 \
-    && "$RUNDIR/bin/$lv" >>"$RUNDIR/$lv.log" 2>&1; then
+    && timeout 240 "$RUNDIR/bin/$lv" >>"$RUNDIR/$lv.log" 2>&1; then
     CODE=0
   else
     CODE=$?
+    if [ "$CODE" -eq 124 ]; then echo "[RUNNER] TIMEOUT: test killed after 240s" >>"$RUNDIR/$lv.log"; fi
   fi
   e=$(date +%s%N)
   SECS="$(awk "BEGIN {printf \"%.2f\", ($e - $s) / 1000000000}")"

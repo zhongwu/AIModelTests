@@ -86,6 +86,11 @@ int main() {
         for (int i = 0; i < kTotal; ++i) seen[i].store(0);
         std::atomic<int> consumed{0};
         std::atomic<bool> producersDone{false};
+        std::atomic<bool> hammerFailed{false};
+        auto hammerStart = std::chrono::steady_clock::now();
+        auto hammerExpired = [&] {
+            return std::chrono::steady_clock::now() - hammerStart > std::chrono::seconds(60);
+        };
 
         std::vector<std::thread> prod;
         for (int p = 0; p < kProducers; ++p) {
@@ -93,7 +98,10 @@ int main() {
                 int base = p * kPerProducer;
                 for (int i = 0; i < kPerProducer; ++i) {
                     int v = base + i;
-                    while (!q.try_enqueue(v)) std::this_thread::yield();
+                    while (!q.try_enqueue(v)) {
+                        if (hammerExpired()) { hammerFailed.store(true); return; }
+                        std::this_thread::yield();
+                    }
                     produced.fetch_add(1);
                 }
             });
@@ -110,6 +118,7 @@ int main() {
                         consumed.fetch_add(1);
                     } else {
                         if (producersDone.load() && q.empty()) break;
+                        if (hammerExpired()) { hammerFailed.store(true); return; }
                         std::this_thread::yield();
                     }
                 }
@@ -120,6 +129,7 @@ int main() {
         for (auto& t : cons) t.join();
         CHECK(produced.load() == kTotal);
         CHECK(consumed.load() == kTotal);
+        CHECK(!hammerFailed.load()); // no thread gave up on the 60s guard
         for (int i = 0; i < kTotal; ++i) CHECK(seen[i].load() == 1);
         CHECK(q.empty());
     }
