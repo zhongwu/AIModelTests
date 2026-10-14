@@ -2,7 +2,9 @@
 # Usage: powershell -ExecutionPolicy Bypass -File cpp\run_model.ps1 -Model "my-model"
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [string]$Model
+    [string]$Model,
+    # Only run these levels, comma-separated leaf names (e.g. 'level3_hard,level4_harder'). Empty = all.
+    [string]$Only = ""
 )
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -54,6 +56,8 @@ $levels = @(
 
 $runStart = Get-Date
 $rows = @()
+$onlyList = @($Only -split ',' | Where-Object { $_ -ne '' })
+if ($onlyList.Count -gt 0) { $levels = @($levels | Where-Object { $onlyList -contains $_.Name }) }
 foreach ($lv in $levels) {
     $logPath = Join-Path $runDir ($lv.Name + '.log')
     $exePath = Join-Path $binDir $lv.Exe

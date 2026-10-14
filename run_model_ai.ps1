@@ -5,7 +5,13 @@
 param(
     [Parameter(Position = 0)]
     [string]$Model = "gemma4:12b",
-    [string]$OllamaHost = "http://localhost:11434"
+    [string]$OllamaHost = "http://localhost:11434",
+    # Ollama model to query (defaults to $Model; allows a distinct archive label).
+    [string]$OllamaModel = "",
+    # Only run these levels, comma-separated "Suite/Leaf" (e.g. 'cpp/level3_hard,cpp/level4_harder'). Empty = all.
+    [string]$Only = "",
+    # Enable the model's thinking mode (needs a big-context variant).
+    [switch]$Think
 )
 $ErrorActionPreference = "Stop"
 
@@ -36,14 +42,16 @@ function Extract-Code([string]$t) {
 }
 
 function Invoke-Model([string]$prompt) {
+    $target = $Model
+    if ($OllamaModel -ne '') { $target = $OllamaModel }
     $body = @{
-        model = $Model
+        model = $target
         prompt = $prompt
         stream = $false
         # NOTE: gemma4 is a thinking model; with thinking on, reasoning tokens can
         # fill the whole context window and leave `response` empty. Disable it so
-        # the full window is available for the answer.
-        think = $false
+        # the full window is available for the answer (unless -Think is passed).
+        think = [bool]$Think
         options = @{ temperature = 0; num_predict = 16384 }
     } | ConvertTo-Json -Depth 6
     $resp = Invoke-RestMethod -Uri "$OllamaHost/api/generate" -Method Post `
@@ -80,6 +88,8 @@ New-Item -ItemType Directory -Path $ioRoot | Out-Null
 
 try {
     foreach ($lv in $levels) {
+        $tag = "$($lv.Suite)/$($lv.Dir | Split-Path -Leaf)"
+        if ($Only -ne '' -and -not (($Only -split ',') -contains $tag)) { continue }
         $d = Join-Path $root $lv.Dir
         $sb = New-Object System.Text.StringBuilder
         [void]$sb.AppendLine("You are an expert $($lv.Lang) programmer. Complete the task below.")
@@ -93,7 +103,6 @@ try {
             [void]$sb.AppendLine([IO.File]::ReadAllText((Join-Path $d $f)))
         }
         $prompt = $sb.ToString()
-        $tag = "$($lv.Suite)/$($lv.Dir | Split-Path -Leaf)"
         Set-Content -Path (Join-Path $ioRoot ($tag.Replace('/', '_') + '.prompt.txt')) -Value $prompt
         Write-Host "Generating $tag ..."
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -113,8 +122,9 @@ try {
     }
 
     foreach ($suite in @('cpp', 'csharp')) {
+        $suiteOnly = (($Only -split ',') | Where-Object { $_ -like "$suite/*" } | ForEach-Object { $_.Substring($suite.Length + 1) }) -join ','
         Write-Host "=== Running $suite suite ==="
-        powershell -ExecutionPolicy Bypass -File (Join-Path $root "$suite\run_model.ps1") -Model $Model
+        powershell -ExecutionPolicy Bypass -File (Join-Path $root "$suite\run_model.ps1") -Model $Model -Only $suiteOnly
         Write-Host "$suite suite exit: $LASTEXITCODE"
     }
 }

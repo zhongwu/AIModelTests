@@ -2,7 +2,9 @@
 # Usage: powershell -ExecutionPolicy Bypass -File csharp\run_model.ps1 -Model "my-model"
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [string]$Model
+    [string]$Model,
+    # Only run these levels, comma-separated project names (e.g. 'Level3.Hard'). Empty = all.
+    [string]$Only = ""
 )
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -27,6 +29,8 @@ $levels = @('Level1.Easy', 'Level2.Medium', 'Level3.Hard', 'Level4.Harder', 'Lev
 
 $runStart = Get-Date
 $rows = @()
+$onlyList = @($Only -split ',' | Where-Object { $_ -ne '' })
+if ($onlyList.Count -gt 0) { $levels = @($levels | Where-Object { $onlyList -contains $_ }) }
 foreach ($lv in $levels) {
     $proj = Join-Path $PSScriptRoot "$lv\$lv.csproj"
     $logPath = Join-Path $runDir ($lv + '.log')
