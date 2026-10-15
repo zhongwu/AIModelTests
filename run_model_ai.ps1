@@ -24,9 +24,15 @@ function Sanitize-ModelName([string]$n) {
     return $clean
 }
 
-function Extract-Code([string]$t) {
+function Extract-Code([string]$t, [string]$marker) {
     if ([string]::IsNullOrWhiteSpace($t)) { return '' }
     $s = $t.Trim()
+    # Some models echo the prompt / think out loud before the code. The real
+    # code is at the end, so cut from the LAST occurrence of the marker.
+    if ($marker -ne '' ) {
+        $idx = $s.LastIndexOf($marker)
+        if ($idx -ge 0) { $s = $s.Substring($idx).Trim() }
+    }
     $m = [regex]::Match($s, '(?s)```(?:[a-zA-Z+#]*\s*)?(.*?)```')
     if ($m.Success) { $s = $m.Groups[1].Value.Trim() }
     $lines = $s -split "`r?`n"
@@ -61,16 +67,16 @@ function Invoke-Model([string]$prompt) {
 
 $root = $PSScriptRoot
 $levels = @(
-    @{ Suite = 'cpp'; Dir = 'cpp/level1_easy';    Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp', 'starter.cpp'); Deliverable = 'cpp/level1_easy/solution.cpp' },
-    @{ Suite = 'cpp'; Dir = 'cpp/level2_medium';  Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp', 'starter.cpp'); Deliverable = 'cpp/level2_medium/solution.cpp' },
-    @{ Suite = 'cpp'; Dir = 'cpp/level3_hard';    Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level3_hard/solution.hpp' },
-    @{ Suite = 'cpp'; Dir = 'cpp/level4_harder';  Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level4_harder/solution.hpp' },
-    @{ Suite = 'cpp'; Dir = 'cpp/level5_hardest'; Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level5_hardest/solution.hpp' },
-    @{ Suite = 'csharp'; Dir = 'csharp/Level1.Easy';    Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level1.Easy/Solution.cs' },
-    @{ Suite = 'csharp'; Dir = 'csharp/Level2.Medium';  Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level2.Medium/Solution.cs' },
-    @{ Suite = 'csharp'; Dir = 'csharp/Level3.Hard';    Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level3.Hard/Solution.cs' },
-    @{ Suite = 'csharp'; Dir = 'csharp/Level4.Harder';  Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level4.Harder/Solution.cs' },
-    @{ Suite = 'csharp'; Dir = 'csharp/Level5.Hardest'; Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level5.Hardest/Solution.cs' }
+    @{ Suite = 'cpp'; Dir = 'cpp/level1_easy';    Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp', 'starter.cpp'); Deliverable = 'cpp/level1_easy/solution.cpp'; Marker = '#include "starter.hpp"' },
+    @{ Suite = 'cpp'; Dir = 'cpp/level2_medium';  Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp', 'starter.cpp'); Deliverable = 'cpp/level2_medium/solution.cpp'; Marker = '#include "starter.hpp"' },
+    @{ Suite = 'cpp'; Dir = 'cpp/level3_hard';    Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level3_hard/solution.hpp'; Marker = '#pragma once' },
+    @{ Suite = 'cpp'; Dir = 'cpp/level4_harder';  Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level4_harder/solution.hpp'; Marker = '#pragma once' },
+    @{ Suite = 'cpp'; Dir = 'cpp/level5_hardest'; Lang = 'C++'; PromptFiles = @('TASK.md', 'starter.hpp'); Deliverable = 'cpp/level5_hardest/solution.hpp'; Marker = '#pragma once' },
+    @{ Suite = 'csharp'; Dir = 'csharp/Level1.Easy';    Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level1.Easy/Solution.cs'; Marker = 'using System;' },
+    @{ Suite = 'csharp'; Dir = 'csharp/Level2.Medium';  Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level2.Medium/Solution.cs'; Marker = 'using System;' },
+    @{ Suite = 'csharp'; Dir = 'csharp/Level3.Hard';    Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level3.Hard/Solution.cs'; Marker = 'using System;' },
+    @{ Suite = 'csharp'; Dir = 'csharp/Level4.Harder';  Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level4.Harder/Solution.cs'; Marker = 'using System;' },
+    @{ Suite = 'csharp'; Dir = 'csharp/Level5.Hardest'; Lang = 'C#'; PromptFiles = @('TASK.md', 'Starter.cs.txt'); Deliverable = 'csharp/Level5.Hardest/Solution.cs'; Marker = 'using System;' }
 )
 
 # Back up reference solutions.
@@ -115,7 +121,7 @@ try {
         }
         $sw.Stop()
         Set-Content -Path (Join-Path $ioRoot ($tag.Replace('/', '_') + '.raw.txt')) -Value $raw
-        $code = Extract-Code $raw
+        $code = Extract-Code $raw $lv.Marker
         if ($code -eq '') { $code = "#error MODEL PRODUCED NO OUTPUT`n" }
         Set-Content -Path (Join-Path $root $lv.Deliverable) -Value $code -NoNewline:$false
         Write-Host ("  done in {0}s, {1} chars extracted" -f [math]::Round($sw.Elapsed.TotalSeconds), $code.Length)
@@ -124,7 +130,14 @@ try {
     foreach ($suite in @('cpp', 'csharp')) {
         $suiteOnly = (($Only -split ',') | Where-Object { $_ -like "$suite/*" } | ForEach-Object { $_.Substring($suite.Length + 1) }) -join ','
         Write-Host "=== Running $suite suite ==="
-        powershell -ExecutionPolicy Bypass -File (Join-Path $root "$suite\run_model.ps1") -Model $Model -Only $suiteOnly
+        # NOTE: omit -Only entirely when empty: powershell -File drops empty
+        # args, which would leave a dangling flag in the child.
+        if ([string]::IsNullOrEmpty($suiteOnly)) {
+            powershell -ExecutionPolicy Bypass -File (Join-Path $root "$suite\run_model.ps1") -Model $Model
+        }
+        else {
+            powershell -ExecutionPolicy Bypass -File (Join-Path $root "$suite\run_model.ps1") -Model $Model -Only $suiteOnly
+        }
         Write-Host "$suite suite exit: $LASTEXITCODE"
     }
 }
