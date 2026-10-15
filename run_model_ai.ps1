@@ -11,7 +11,9 @@ param(
     # Only run these levels, comma-separated "Suite/Leaf" (e.g. 'cpp/level3_hard,cpp/level4_harder'). Empty = all.
     [string]$Only = "",
     # Enable the model's thinking mode (needs a big-context variant).
-    [switch]$Think
+    [switch]$Think,
+    # Request a larger context window (0 = Ollama default). Needs VRAM headroom.
+    [int]$NumCtx = 0
 )
 $ErrorActionPreference = "Stop"
 
@@ -59,7 +61,9 @@ function Invoke-Model([string]$prompt) {
         # the full window is available for the answer (unless -Think is passed).
         think = [bool]$Think
         options = @{ temperature = 0; num_predict = 16384 }
-    } | ConvertTo-Json -Depth 6
+    }
+    if ($NumCtx -gt 0) { $body.options['num_ctx'] = $NumCtx }
+    $body = $body | ConvertTo-Json -Depth 6
     $resp = Invoke-RestMethod -Uri "$OllamaHost/api/generate" -Method Post `
         -Body $body -ContentType 'application/json' -TimeoutSec 1500
     return [string]$resp.response
