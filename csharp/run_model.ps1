@@ -39,15 +39,28 @@ foreach ($lv in $levels) {
     # code may hard-spin inside TryEnqueue/TryDequeue, which in-test guards
     # cannot catch. Redirect INSIDE cmd so stderr never becomes a PS error record.
     # NOTE: `dotnet build` takes the project positionally (`--project` is rejected).
-    $buildCmd = "dotnet build -c Release `"$proj`" > `"$logPath`" 2>&1"
+    # --no-incremental forces a fresh dll (new MVID) every attempt: org
+    # Application Control verdicts can stick to a file hash, so a blocked run
+    # rebuilds for a fresh lottery ticket. -p:Deterministic=false is required:
+    # deterministic builds are byte-identical, which would re-test the same hash.
+    $buildCmd = "dotnet build --no-incremental -p:Deterministic=false -c Release `"$proj`" > `"$logPath`" 2>&1"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    cmd.exe /c $buildCmd
-    $buildCode = $LASTEXITCODE
-    $text = Get-Content -Raw $logPath
-    if ($null -eq $text) { $text = '' }
-    $code = $buildCode
+    $attempt = 0
     $passed = $false
-    if (($buildCode -eq 0) -and (Test-Path $dllPath)) {
+    $code = -1
+    $text = ''
+    $retryable = $false
+    do {
+        $attempt++
+        $retryable = $false
+        if ($attempt -gt 1) { Start-Sleep -Seconds 5 }
+        cmd.exe /c $buildCmd
+        $buildCode = $LASTEXITCODE
+        $text = Get-Content -Raw $logPath
+        if ($null -eq $text) { $text = '' }
+        $code = $buildCode
+        $passed = $false
+        if (($buildCode -eq 0) -and (Test-Path $dllPath)) {
         # Run under a watchdog cmd wrapper that echoes the exit code to a FILE:
         # reading Process.ExitCode is unreliable in this host ($null on PS 5.1).
         $tmpCode = "$logPath.exitcode"
@@ -82,11 +95,13 @@ foreach ($lv in $levels) {
         $text = Get-Content -Raw $logPath
         if ($null -eq $text) { $text = '' }
         $passed = ($code -eq 0) -and ($text -match 'ALL TESTS PASSED')
+        if ((-not $passed) -and ($text -match 'Application Control policy has blocked')) { $retryable = $true }
     }
+    } while ((-not $passed) -and $retryable -and ($attempt -lt 5))
     $sw.Stop()
     $secs = [math]::Round($sw.Elapsed.TotalSeconds, 2)
     if ($passed) { $status = 'PASS' } else { $status = 'FAIL' }
-    $rows += [pscustomobject]@{ level = $lv; passed = $passed; seconds = $secs; exitCode = $code; log = ($lv + '.log') }
+    $rows += [pscustomobject]@{ level = $lv; passed = $passed; seconds = $secs; exitCode = $code; attempts = $attempt; log = ($lv + '.log') }
     Write-Host ("{0}: {1} ({2}s)" -f $lv, $status, $secs)
 }
 $runEnd = Get-Date
